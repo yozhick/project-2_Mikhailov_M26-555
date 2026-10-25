@@ -3,3 +3,5 @@ dist/
 __pycache__/
 *.egg-info/
 .idea/
+.ruff_cache/
+db_meta.json
