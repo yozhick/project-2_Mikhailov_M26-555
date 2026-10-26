@@ -1,12 +1,6 @@
-import ast
-import re
+import shlex
 
-TOKEN = re.compile(r"\s*(\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[(),=]|[^\s(),=\"']+)")
-INTEGER = re.compile(r"[+-]?[0-9]+")
-
-
-class ParseError(ValueError):
-    """Некорректный синтаксис пользовательской команды."""
+from primitive_db.constants import BOOLEAN_VALUES, STRING_QUOTES, TOKEN_SEPARATORS
 
 
 def tokenize(text):
@@ -14,50 +8,74 @@ def tokenize(text):
     tokens = []
     position = 0
     while position < len(text):
-        if not text[position:].strip():
-            break
-        match = TOKEN.match(text, position)
-        if match is None:
-            raise ParseError(f"проверьте кавычки рядом с {text[position:]!r}")
-        tokens.append(match.group(1))
-        position = match.end()
+        character = text[position]
+        if character.isspace():
+            position += 1
+            continue
+        if character in TOKEN_SEPARATORS:
+            tokens.append(character)
+            position += 1
+            continue
+        start = position
+        if character in STRING_QUOTES:
+            quote = character
+            position += 1
+            while position < len(text):
+                if text[position] == "\\" and quote == '"':
+                    position += 2
+                elif text[position] == quote:
+                    position += 1
+                    break
+                else:
+                    position += 1
+            else:
+                raise ValueError(f"проверьте кавычки рядом с {text[start:]!r}")
+        else:
+            while (
+                position < len(text)
+                and not text[position].isspace()
+                and text[position] not in TOKEN_SEPARATORS + STRING_QUOTES
+            ):
+                position += 1
+        tokens.append(text[start:position])
     return tokens
 
 
 def parse_value(token):
     """Строки требуют кавычек, числа и true/false преобразуются в Python-типы."""
-    if token.startswith(('"', "'")):
+    if token.startswith(tuple(STRING_QUOTES)):
         try:
-            value = ast.literal_eval(token)
-        except (SyntaxError, ValueError):
-            raise ParseError(f"некорректная строка {token!r}") from None
-        if isinstance(value, str):
-            return value
-    elif token.lower() in {"true", "false"}:
-        return token.lower() == "true"
-    elif INTEGER.fullmatch(token):
+            return shlex.split(token, comments=False, posix=True)[0]
+        except (ValueError, IndexError):
+            raise ValueError(f"некорректная строка {token!r}") from None
+    if token.lower() in BOOLEAN_VALUES:
+        return BOOLEAN_VALUES[token.lower()]
+    digits = token[1:] if token.startswith(("+", "-")) else token
+    if digits and all("0" <= character <= "9" for character in digits):
         return int(token)
-    raise ParseError(
+    raise ValueError(
         f"значение {token!r}: используйте int, true/false или строку в кавычках"
     )
 
 
 def _name(token):
+    """Разобрать обычное имя или имя в кавычках."""
     name = parse_value(token) if token.startswith(('"', "'")) else token
     if not isinstance(name, str) or not name.strip() or name in {"(", ")", ",", "="}:
-        raise ParseError(f"некорректное имя {token!r}")
+        raise ValueError(f"некорректное имя {token!r}")
     return name
 
 
 def _assignments(tokens, separator, stop_word=None):
+    """Разобрать последовательность присваиваний для where или set."""
     result = {}
     position = 0
     while position < len(tokens):
         if position + 2 >= len(tokens) or tokens[position + 1] != "=":
-            raise ParseError("ожидается <столбец> = <значение>")
+            raise ValueError("ожидается <столбец> = <значение>")
         name = _name(tokens[position])
         if name in result:
-            raise ParseError(f'столбец "{name}" указан несколько раз')
+            raise ValueError(f'столбец "{name}" указан несколько раз')
         result[name] = parse_value(tokens[position + 2])
         position += 3
         if position == len(tokens):
@@ -65,12 +83,12 @@ def _assignments(tokens, separator, stop_word=None):
         if stop_word and tokens[position].lower() == stop_word:
             break
         if tokens[position].lower() != separator:
-            raise ParseError(f"между условиями ожидается {separator!r}")
+            raise ValueError(f"между условиями ожидается {separator!r}")
         position += 1
         if position == len(tokens):
-            raise ParseError("после разделителя ожидается условие")
+            raise ValueError("после разделителя ожидается условие")
     if not result:
-        raise ParseError("условие не задано")
+        raise ValueError("условие не задано")
     return result, position
 
 
@@ -87,17 +105,18 @@ def parse_set_clause(clause):
 
 
 def _values(tokens):
+    """Разобрать значения insert, разделённые запятыми."""
     if not tokens:
         return []
     values = []
     for position, token in enumerate(tokens):
         if position % 2:
             if token != ",":
-                raise ParseError("значения должны разделяться запятыми")
+                raise ValueError("значения должны разделяться запятыми")
         else:
             values.append(parse_value(token))
     if len(tokens) % 2 == 0:
-        raise ParseError("после запятой ожидается значение")
+        raise ValueError("после запятой ожидается значение")
     return values
 
 
@@ -110,14 +129,14 @@ def parse_command(user_input):
     result = {"command": command}
     if command in {"exit", "help", "list_tables"}:
         if len(tokens) != 1:
-            raise ParseError(f"{command} не принимает аргументы")
+            raise ValueError(f"{command} не принимает аргументы")
     elif command in {"drop_table", "info"}:
         if len(tokens) != 2:
-            raise ParseError(f"ожидается {command} <имя_таблицы>")
+            raise ValueError(f"ожидается {command} <имя_таблицы>")
         result["table_name"] = _name(tokens[1])
     elif command == "create_table":
         if len(tokens) < 3:
-            raise ParseError("ожидается create_table <имя_таблицы> <столбец:тип> ...")
+            raise ValueError("ожидается create_table <имя_таблицы> <столбец:тип> ...")
         result["table_name"] = _name(tokens[1])
         result["columns"] = [_name(token) for token in tokens[2:]]
     elif command == "insert":
@@ -128,28 +147,28 @@ def parse_command(user_input):
             or tokens[4] != "("
             or tokens[-1] != ")"
         ):
-            raise ParseError("ожидается insert into <таблица> values (<значения>)")
+            raise ValueError("ожидается insert into <таблица> values (<значения>)")
         result["table_name"] = _name(tokens[2])
         result["values"] = _values(tokens[5:-1])
     elif command in {"select", "delete"}:
         if len(tokens) < 3 or tokens[1].lower() != "from":
-            raise ParseError(f"ожидается {command} from <таблица> [where <условие>]")
+            raise ValueError(f"ожидается {command} from <таблица> [where <условие>]")
         result["table_name"] = _name(tokens[2])
         if len(tokens) == 3 and command == "select":
             result["where_clause"] = None
         else:
             if len(tokens) < 5 or tokens[3].lower() != "where":
-                raise ParseError("ожидается where <столбец> = <значение>")
+                raise ValueError("ожидается where <столбец> = <значение>")
             result["where_clause"], _ = _assignments(tokens[4:], "and")
     elif command == "update":
         if len(tokens) < 4 or tokens[2].lower() != "set":
-            raise ParseError(
+            raise ValueError(
                 "ожидается update <таблица> set <изменения> where <условие>"
             )
         result["table_name"] = _name(tokens[1])
         assignments = tokens[3:]
         result["set_clause"], end = _assignments(assignments, ",", stop_word="where")
         if end == len(assignments):
-            raise ParseError("для update обязательно условие where")
+            raise ValueError("для update обязательно условие where")
         result["where_clause"], _ = _assignments(assignments[end + 1 :], "and")
     return result

@@ -1,10 +1,13 @@
 import prompt
 from prettytable import PrettyTable
 
+from decorators import handle_db_errors
+from primitive_db.constants import METADATA_FILE
 from primitive_db.core import (
     create_table,
     delete,
     drop_table,
+    find_records,
     get_columns,
     insert,
     list_tables,
@@ -12,7 +15,7 @@ from primitive_db.core import (
     update,
     validate_fields,
 )
-from primitive_db.parser import ParseError, parse_command
+from primitive_db.parser import parse_command
 from primitive_db.utils import (
     load_metadata,
     load_table_data,
@@ -20,8 +23,6 @@ from primitive_db.utils import (
     save_metadata,
     save_table_data,
 )
-
-METADATA_FILE = "db_meta.json"
 
 
 def print_help():
@@ -53,12 +54,20 @@ def print_help():
     print("\nОбщие команды:")
     print("<command> exit - выход из программы")
     print("<command> help - справочная информация\n")
+    print(
+        "Удаление таблиц и записей требует подтверждения: "
+        "y — выполнить, иначе отмена.\n"
+    )
 
 
+@handle_db_errors
 def _execute_table_command(command, metadata):
+    """Выполнить команду управления схемами и сохранить успешное изменение."""
     action = command["command"]
     if action == "list_tables":
         tables = list_tables(metadata)
+        if tables is None:
+            return
         if tables:
             for table_name in tables:
                 print(f"- {table_name}")
@@ -75,6 +84,8 @@ def _execute_table_command(command, metadata):
             column_list = ", ".join(metadata[table_name]["columns"])
             print(f'Таблица "{table_name}" успешно создана со столбцами: {column_list}')
     elif action == "drop_table":
+        if get_columns(metadata, table_name) is None:
+            return
         updated = drop_table(metadata, table_name)
         if updated is not None:
             save_metadata(METADATA_FILE, updated)
@@ -83,42 +94,58 @@ def _execute_table_command(command, metadata):
 
 
 def _print_records(columns, records):
+    """Показать результат выборки в таблице с заголовками столбцов."""
     table = PrettyTable()
     table.field_names = list(columns)
     table.add_rows([[row[name] for name in columns] for row in records])
     print(table)
 
 
+@handle_db_errors
 def _execute_data_command(command, metadata):
+    """Загрузить данные таблицы, проверить команду и выполнить операцию."""
     action = command["command"]
     table_name = command["table_name"]
     columns = get_columns(metadata, table_name)
+    if columns is None:
+        return
     table_data = load_table_data(table_name)
     for row in table_data:
         if set(row) != set(columns):
             raise ValueError(f'Данные таблицы "{table_name}" не соответствуют схеме.')
-        validate_fields(metadata, table_name, row)
+        if validate_fields(metadata, table_name, row) is None:
+            return
 
     where_clause = command.get("where_clause")
-    validate_fields(metadata, table_name, where_clause or {})
+    if validate_fields(metadata, table_name, where_clause or {}) is None:
+        return
     if action == "insert":
         updated = insert(metadata, table_name, command["values"], table_data=table_data)
+        if updated is None:
+            return
         save_table_data(table_name, updated)
         print(
             f"Запись с ID={updated[-1]['ID']} успешно добавлена "
             f'в таблицу "{table_name}".'
         )
     elif action == "select":
-        _print_records(columns, select(table_data, where_clause))
+        records = select(table_data, where_clause)
+        if records is not None:
+            _print_records(columns, records)
     elif action == "info":
         print(f"Таблица: {table_name}")
         print("Столбцы: " + ", ".join(metadata[table_name]["columns"]))
         print(f"Количество записей: {len(table_data)}")
     elif action == "update":
         set_clause = command["set_clause"]
-        validate_fields(metadata, table_name, set_clause, updating=True)
-        matching = select(table_data, where_clause)
+        if validate_fields(metadata, table_name, set_clause, updating=True) is None:
+            return
+        matching = find_records(table_data, where_clause)
+        if matching is None:
+            return
         updated = update(table_data, set_clause, where_clause)
+        if updated is None:
+            return
         if matching:
             save_table_data(table_name, updated)
             for row in matching:
@@ -129,8 +156,15 @@ def _execute_data_command(command, metadata):
         else:
             print("Подходящие записи не найдены.")
     elif action == "delete":
-        matching = select(table_data, where_clause)
+        matching = find_records(table_data, where_clause)
+        if matching is None:
+            return
+        if not matching:
+            print("Подходящие записи не найдены.")
+            return
         updated = delete(table_data, where_clause)
+        if updated is None:
+            return
         if matching:
             save_table_data(table_name, updated)
             for row in matching:
@@ -174,9 +208,5 @@ def run():
                 _execute_data_command(command, metadata)
             else:
                 print(f"Функции {action} нет. Попробуйте снова.")
-        except ParseError as error:
-            print(f"Некорректное значение: {error}. Попробуйте снова.")
         except ValueError as error:
-            print(f"Ошибка: {error}")
-        except OSError as error:
-            print(f"Ошибка работы с файлами: {error}")
+            print(f"Некорректное значение: {error}. Попробуйте снова.")

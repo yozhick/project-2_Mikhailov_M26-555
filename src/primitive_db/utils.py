@@ -1,59 +1,62 @@
 import json
 import os
-import tempfile
-from pathlib import Path
 
-DATA_DIR = Path("data")
+from primitive_db.constants import (
+    CONTROL_CHARACTER_LIMIT,
+    DATA_DIR,
+    INVALID_FILENAME_CHARACTERS,
+    JSON_INDENT,
+    TEMP_SUFFIX_BYTES,
+    TEXT_ENCODING,
+    WINDOWS_RESERVED_NAMES,
+)
 
 
 def validate_table_name(table_name):
     """Имя таблицы должно подходить для отдельного файла в Windows и Linux."""
-    reserved = {"CON", "PRN", "AUX", "NUL"}
-    reserved.update(
-        f"{prefix}{number}" for prefix in ("COM", "LPT") for number in range(1, 10)
-    )
     if (
         not table_name.strip()
         or table_name in {".", ".."}
-        or any(char in '<>:"/\\|?*' or ord(char) < 32 for char in table_name)
+        or any(
+            char in INVALID_FILENAME_CHARACTERS or ord(char) < CONTROL_CHARACTER_LIMIT
+            for char in table_name
+        )
         or table_name.endswith((" ", "."))
-        or table_name.split(".")[0].upper() in reserved
+        or table_name.split(".")[0].upper() in WINDOWS_RESERVED_NAMES
     ):
         raise ValueError(f'Некорректное имя таблицы: "{table_name}".')
 
 
 def _table_filepath(table_name):
+    """Получить путь к файлу таблицы после проверки её имени."""
     validate_table_name(table_name)
-    return Path(DATA_DIR) / f"{table_name}.json"
+    return os.path.join(DATA_DIR, f"{table_name}.json")
 
 
 def _save_json(filepath, data):
     """Сначала записать временный файл, затем заменить целевой целиком."""
-    filepath = Path(filepath)
-    filepath.parent.mkdir(parents=True, exist_ok=True)
+    filepath = os.path.abspath(filepath)
+    directory = os.path.dirname(filepath)
+    os.makedirs(directory, exist_ok=True)
+    suffix = os.urandom(TEMP_SUFFIX_BYTES).hex()
+    candidate = os.path.join(directory, f".{os.path.basename(filepath)}.{suffix}.tmp")
     temporary_path = None
     try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=filepath.parent,
-            prefix=f".{filepath.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as file:
-            temporary_path = Path(file.name)
-            json.dump(data, file, ensure_ascii=False, indent=2)
+        with open(candidate, mode="x", encoding=TEXT_ENCODING) as file:
+            temporary_path = candidate
+            json.dump(data, file, ensure_ascii=False, indent=JSON_INDENT)
             file.write("\n")
         os.replace(temporary_path, filepath)
+        temporary_path = None
     finally:
         if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
+            os.remove(temporary_path)
 
 
 def load_metadata(filepath):
     """Загрузить метаданные или вернуть пустой словарь для новой базы."""
     try:
-        with open(filepath, encoding="utf-8") as file:
+        with open(filepath, encoding=TEXT_ENCODING) as file:
             data = json.load(file)
     except FileNotFoundError:
         return {}
@@ -71,7 +74,7 @@ def save_metadata(filepath, data):
 def load_table_data(table_name):
     """Загрузить строки таблицы; отсутствующий файл означает пустую таблицу."""
     try:
-        with _table_filepath(table_name).open(encoding="utf-8") as file:
+        with open(_table_filepath(table_name), encoding=TEXT_ENCODING) as file:
             data = json.load(file)
     except FileNotFoundError:
         return []
@@ -87,4 +90,7 @@ def save_table_data(table_name, data):
 
 def remove_table_data(table_name):
     """При удалении таблицы удалить и её строки."""
-    _table_filepath(table_name).unlink(missing_ok=True)
+    try:
+        os.remove(_table_filepath(table_name))
+    except FileNotFoundError:
+        pass

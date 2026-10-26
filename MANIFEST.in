@@ -1,0 +1,4 @@
+global-exclude *
+include MANIFEST.in Makefile pyproject.toml README.md uv.lock
+include src/decorators.py
+recursive-include src/primitive_db *.py

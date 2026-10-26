@@ -17,8 +17,14 @@ database = "primitive_db.main:main"
 project = "primitive_db.main:main"
 
 [build-system]
-requires = ["uv_build>=0.13.1,<0.14.0"]
-build-backend = "uv_build"
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["primitive_db"]
+py-modules = ["decorators"]
+include-package-data = false
 
 [tool.ruff]
 line-length = 88
