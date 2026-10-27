@@ -1,5 +1,9 @@
 """Общие настройки хранения, типов данных и разбора команд."""
 
+import os
+
+IS_WINDOWS = os.name == "nt"
+
 METADATA_FILE = "db_meta.json"
 DATA_DIR = "data"
 TEXT_ENCODING = "utf-8"
@@ -21,7 +25,8 @@ WINDOWS_RESERVED_NAMES = {"CON", "PRN", "AUX", "NUL"} | {
     for prefix in ("COM", "LPT")
     for number in (1, 2, 3, 4, 5, 6, 7, 8, 9)
 }
-INVALID_FILENAME_CHARACTERS = '<>:"/\\|?*'
-CONTROL_CHARACTER_LIMIT = 32
+INVALID_FILENAME_CHARACTERS = "/\0"
+WINDOWS_INVALID_FILENAME_CHARACTERS = '<>:"\\|?*'
+WINDOWS_CONTROL_CHARACTER_LIMIT = 32
 
 WRAPPER_ATTRIBUTES = ("__name__", "__qualname__", "__doc__", "__module__")

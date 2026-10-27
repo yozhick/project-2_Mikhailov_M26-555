@@ -4,7 +4,7 @@ from primitive_db.constants import BOOLEAN_VALUES, STRING_QUOTES, TOKEN_SEPARATO
 
 
 def tokenize(text):
-    """Разбить строку, сохраняя кавычки и разделители внутри строковых значений."""
+    """Разбиение строки команды на токены с сохранением строковых значений."""
     tokens = []
     position = 0
     while position < len(text):
@@ -42,7 +42,7 @@ def tokenize(text):
 
 
 def parse_value(token):
-    """Строки требуют кавычек, числа и true/false преобразуются в Python-типы."""
+    """Преобразование значения команды в соответствующий тип данных."""
     if token.startswith(tuple(STRING_QUOTES)):
         try:
             return shlex.split(token, comments=False, posix=True)[0]
@@ -59,7 +59,7 @@ def parse_value(token):
 
 
 def _name(token):
-    """Разобрать обычное имя или имя в кавычках."""
+    """Разбор и проверка идентификатора таблицы или столбца."""
     name = parse_value(token) if token.startswith(('"', "'")) else token
     if not isinstance(name, str) or not name.strip() or name in {"(", ")", ",", "="}:
         raise ValueError(f"некорректное имя {token!r}")
@@ -67,7 +67,7 @@ def _name(token):
 
 
 def _assignments(tokens, separator, stop_word=None):
-    """Разобрать последовательность присваиваний для where или set."""
+    """Разбор выражений в блоках where и set."""
     result = {}
     position = 0
     while position < len(tokens):
@@ -93,19 +93,19 @@ def _assignments(tokens, separator, stop_word=None):
 
 
 def parse_where_clause(clause):
-    """Преобразовать age = 28 [and ...] в словарь условий."""
+    """Преобразование блока where в словарь условий."""
     result, _ = _assignments(tokenize(clause), "and")
     return result
 
 
 def parse_set_clause(clause):
-    """Преобразовать age = 29, is_active = false в словарь изменений."""
+    """Преобразование блока set в словарь изменений."""
     result, _ = _assignments(tokenize(clause), ",")
     return result
 
 
 def _values(tokens):
-    """Разобрать значения insert, разделённые запятыми."""
+    """Разбор списка значений команды insert."""
     if not tokens:
         return []
     values = []
@@ -121,7 +121,10 @@ def _values(tokens):
 
 
 def parse_command(user_input):
-    """Разобрать команду без потери типов и содержимого строк в кавычках."""
+    """
+    Разбор команды пользователя с преобразованием аргументов
+    в соответствующие типы данных.
+    """
     tokens = tokenize(user_input)
     if not tokens:
         return None

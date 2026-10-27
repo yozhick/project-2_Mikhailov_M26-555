@@ -1,11 +1,11 @@
 import json
-import os
 
 from decorators import confirm_action, create_cacher, handle_db_errors, log_time
 from primitive_db.constants import (
     ID_COLUMN,
     ID_FIELD,
     ID_TYPE,
+    IS_WINDOWS,
     PYTHON_TYPES,
     SUPPORTED_TYPES,
 )
@@ -16,10 +16,10 @@ _select_cache = create_cacher()
 
 @handle_db_errors
 def create_table(metadata, table_name, columns):
-    """Создать таблицу; ошибки обрабатывает декоратор."""
+    """Создание таблицы с заданной структурой столбцов."""
     validate_table_name(table_name)
     if table_name in metadata or (
-        os.name == "nt"
+        IS_WINDOWS
         and any(name.casefold() == table_name.casefold() for name in metadata)
     ):
         raise ValueError(f'Таблица "{table_name}" уже существует.')
@@ -52,7 +52,7 @@ def create_table(metadata, table_name, columns):
 @handle_db_errors
 @confirm_action("удаление таблицы")
 def drop_table(metadata, table_name):
-    """Удалить таблицу; при ошибке вывести сообщение и вернуть None."""
+    """Удаление таблицы из метаданных базы данных."""
     if table_name not in metadata:
         raise KeyError(table_name)
     del metadata[table_name]
@@ -62,12 +62,12 @@ def drop_table(metadata, table_name):
 
 @handle_db_errors
 def list_tables(metadata):
-    """Вернуть имена таблиц в алфавитном порядке."""
+    """Получение списка имён таблиц в алфавитном порядке."""
     return sorted(metadata)
 
 
 def _get_columns(metadata, table_name):
-    """Получить схему или передать ошибку внешнему обработчику операции."""
+    """Получение структуры столбцов указанной таблицы."""
     if table_name not in metadata:
         raise KeyError(table_name)
     return dict(column.split(":") for column in metadata[table_name]["columns"])
@@ -75,12 +75,12 @@ def _get_columns(metadata, table_name):
 
 @handle_db_errors
 def get_columns(metadata, table_name):
-    """Вернуть схему таблицы в порядке столбцов."""
+    """Получение схемы таблицы с сохранением порядка столбцов."""
     return _get_columns(metadata, table_name)
 
 
 def _validate_fields(metadata, table_name, fields, *, updating=False):
-    """Проверить существование и типы полей до изменения данных."""
+    """Проверка существования полей и соответствия значений их типам данных."""
     columns = _get_columns(metadata, table_name)
     for name, value in fields.items():
         if name not in columns:
@@ -95,14 +95,14 @@ def _validate_fields(metadata, table_name, fields, *, updating=False):
 
 @handle_db_errors
 def validate_fields(metadata, table_name, fields, *, updating=False):
-    """Проверить поля и вернуть True; при ошибке декоратор вернёт None."""
+    """Проверка существования столбцов и соответствия значений их типам данных."""
     return _validate_fields(metadata, table_name, fields, updating=updating)
 
 
 @handle_db_errors
 @log_time
 def insert(metadata, table_name, values, *, table_data=None):
-    """Добавить запись с новым ID; переданный список данных можно загрузить заранее."""
+    """Добавление записи в таблицу с автоматическим присвоением идентификатора."""
     columns = [name for name in _get_columns(metadata, table_name) if name != ID_FIELD]
     if len(values) != len(columns):
         raise ValueError(
@@ -126,7 +126,7 @@ def insert(metadata, table_name, values, *, table_data=None):
 
 
 def _matches(record, where_clause):
-    """Сравнить поля с условием с учётом точных типов значений."""
+    """Проверка соответствия записи условиям отбора с учётом типов значений."""
     return all(
         name in record and type(record[name]) is type(value) and record[name] == value
         for name, value in where_clause.items()
@@ -134,7 +134,7 @@ def _matches(record, where_clause):
 
 
 def _select_rows(table_data, where_clause=None):
-    """Отфильтровать строки без кэширования и вывода в консоль."""
+    """Отбор записей таблицы по заданным условиям."""
     if where_clause is None:
         return list(table_data)
     return [row for row in table_data if _matches(row, where_clause)]
@@ -142,14 +142,14 @@ def _select_rows(table_data, where_clause=None):
 
 @handle_db_errors
 def find_records(table_data, where_clause):
-    """Найти строки для изменения без сообщений о времени и кэше выборки."""
+    """Поиск записей таблицы, соответствующих заданным условиям."""
     return _select_rows(table_data, where_clause)
 
 
 @handle_db_errors
 @log_time
 def select(table_data, where_clause=None):
-    """Кэшировать выборку по снимку данных и условия, возвращая независимую копию."""
+    """Получение и кэширование выборки записей по заданным условиям."""
     key = json.dumps(
         [table_data, where_clause],
         sort_keys=True,
@@ -167,7 +167,9 @@ def select(table_data, where_clause=None):
 
 @handle_db_errors
 def update(table_data, set_clause, where_clause):
-    """Обновить подходящие записи после проверки всех новых значений."""
+    """
+    Обновление записей, соответствующих заданным условиям, с проверкой новых значений.
+    """
     if not where_clause or not set_clause:
         raise ValueError("Для update нужны set и where.")
     if ID_FIELD in set_clause:
@@ -187,7 +189,7 @@ def update(table_data, set_clause, where_clause):
 @handle_db_errors
 @confirm_action("удаление записей")
 def delete(table_data, where_clause):
-    """Удалить подходящие записи, сохранив все остальные."""
+    """Удаление записей таблицы в соответствии с заданными условиями."""
     if not where_clause:
         raise ValueError("Для delete нужно условие where.")
     remaining = [row for row in table_data if not _matches(row, where_clause)]

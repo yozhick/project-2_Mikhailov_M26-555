@@ -4,7 +4,7 @@ from primitive_db.engine import run
 
 
 def main():
-    """Запустить консольную базу данных."""
+    """Запуск консольной базы данных."""
     run()
 
 

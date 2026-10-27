@@ -6,7 +6,7 @@ from primitive_db.constants import WRAPPER_ATTRIBUTES
 
 
 def _preserve_metadata(wrapper, func):
-    """Сохранить имя, описание и ссылку на исходную функцию без новых библиотек."""
+    """Сохранение метаданных и ссылки на исходную функцию."""
     for attribute in WRAPPER_ATTRIBUTES:
         if hasattr(func, attribute):
             setattr(wrapper, attribute, getattr(func, attribute))
@@ -15,10 +15,12 @@ def _preserve_metadata(wrapper, func):
 
 
 def handle_db_errors(func):
-    """Вывести понятную ошибку и вернуть None вместо прерывания программы."""
+    """Обработка исключений операций базы данных с выводом сообщений об ошибках."""
 
     def wrapper(*args, **kwargs):
-        """Вызвать операцию и вывести понятное сообщение при исключении."""
+        """
+        Выполнение операции с обработкой исключений и выводом сообщений об ошибках.
+        """
         try:
             return func(*args, **kwargs)
         except FileNotFoundError:
@@ -40,13 +42,13 @@ def handle_db_errors(func):
 
 
 def confirm_action(action_name):
-    """Выполнить опасное действие только после ответа y."""
+    """Фабрика декораторов подтверждения выполнения операции."""
 
     def decorator(func):
-        """Добавить запрос подтверждения перед вызовом функции."""
+        """Добавление запроса подтверждения перед вызовом функции."""
 
         def wrapper(*args, **kwargs):
-            """Запросить подтверждение и выполнить действие при ответе y."""
+            """Выполнение операции после подтверждения пользователя."""
             try:
                 answer = prompt.string(
                     f'Вы уверены, что хотите выполнить "{action_name}"? [y/n]: ',
@@ -66,10 +68,10 @@ def confirm_action(action_name):
 
 
 def log_time(func):
-    """Измерить длительность вызова монотонными часами."""
+    """Измерение времени выполнения функции."""
 
     def wrapper(*args, **kwargs):
-        """Выполнить функцию и вывести длительность её вызова."""
+        """Выполнение функции с выводом времени её выполнения."""
         started = time.monotonic()
         try:
             return func(*args, **kwargs)
@@ -81,11 +83,11 @@ def log_time(func):
 
 
 def create_cacher():
-    """Создать независимый кэш в замыкании возвращаемой функции."""
+    """Создание функции кэширования с хранением результатов в замыкании."""
     cache = {}
 
     def cache_result(key, value_func):
-        """Вычислить отсутствующее значение и вернуть результат по ключу."""
+        """Получение результата из кэша или вычисление и сохранение нового значения."""
         if key not in cache:
             cache[key] = value_func()
         return cache[key]

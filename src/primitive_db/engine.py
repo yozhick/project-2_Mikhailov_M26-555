@@ -26,7 +26,7 @@ from primitive_db.utils import (
 
 
 def print_help():
-    """Показать команды работы со строками и управления таблицами."""
+    """Вывод справочной информации о командах базы данных."""
     print("\n***Операции с данными***")
     print("\nФункции:")
     print(
@@ -62,7 +62,7 @@ def print_help():
 
 @handle_db_errors
 def _execute_table_command(command, metadata):
-    """Выполнить команду управления схемами и сохранить успешное изменение."""
+    """Выполнение команд управления таблицами с сохранением изменений метаданных."""
     action = command["command"]
     if action == "list_tables":
         tables = list_tables(metadata)
@@ -94,7 +94,7 @@ def _execute_table_command(command, metadata):
 
 
 def _print_records(columns, records):
-    """Показать результат выборки в таблице с заголовками столбцов."""
+    """Вывод результата выборки в табличном формате."""
     table = PrettyTable()
     table.field_names = list(columns)
     table.add_rows([[row[name] for name in columns] for row in records])
@@ -103,7 +103,7 @@ def _print_records(columns, records):
 
 @handle_db_errors
 def _execute_data_command(command, metadata):
-    """Загрузить данные таблицы, проверить команду и выполнить операцию."""
+    """Выполнение команд обработки данных таблицы с проверкой входных значений."""
     action = command["command"]
     table_name = command["table_name"]
     columns = get_columns(metadata, table_name)
@@ -177,7 +177,7 @@ def _execute_data_command(command, metadata):
 
 
 def run():
-    """Запустить цикл управления таблицами и данными."""
+    """Запуск основного цикла обработки команд базы данных."""
     print("***База данных***")
     print_help()
     while True:
