@@ -86,10 +86,15 @@ def _execute_table_command(command, metadata):
     elif action == "drop_table":
         if get_columns(metadata, table_name) is None:
             return
-        updated = drop_table(metadata, table_name)
+        updated = drop_table(metadata.copy(), table_name)
         if updated is not None:
             save_metadata(METADATA_FILE, updated)
-            remove_table_data(table_name)
+            try:
+                remove_table_data(table_name)
+            except Exception:
+                save_metadata(METADATA_FILE, metadata)
+                raise
+            del metadata[table_name]
             print(f'Таблица "{table_name}" успешно удалена.')
 
 
@@ -165,15 +170,9 @@ def _execute_data_command(command, metadata):
         updated = delete(table_data, where_clause)
         if updated is None:
             return
-        if matching:
-            save_table_data(table_name, updated)
-            for row in matching:
-                print(
-                    f"Запись с ID={row['ID']} успешно удалена "
-                    f'из таблицы "{table_name}".'
-                )
-        else:
-            print("Подходящие записи не найдены.")
+        save_table_data(table_name, updated)
+        for row in matching:
+            print(f'Запись с ID={row["ID"]} успешно удалена из таблицы "{table_name}".')
 
 
 def run():
